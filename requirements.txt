@@ -1,2 +1,8 @@
 streamlit
 pandas
+google-cloud-storage
+google-auth
+python-dotenv
+google-generativeai
+google-genai
+pydantic
