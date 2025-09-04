@@ -139,20 +139,51 @@ def get_session_metadata(_bucket, session_id):
                 pass
         
         # Check for different file types
-        prefixes_to_check = [
-            (f"sessions/{session_id}/recording", 'Has Audio'),
-            (f"sessions/{session_id}/audio", 'Has Audio'),
+        # First check for specific files
+        specific_files = [
             (f"sessions/{session_id}/metadata.json", 'Has Metadata'),
             (f"sessions/{session_id}/events.json", 'Has Events'),
-            (f"sessions/{session_id}/transcript", 'Has Transcript'),
-            (f"sessions/{session_id}/transcription.json", 'Has Transcript'),
-            (f"sessions/{session_id}/analysis", 'Has Analysis')
+            (f"sessions/{session_id}/transcription.json", 'Has Transcript')
         ]
         
-        for prefix, key in prefixes_to_check:
-            blobs = list(_bucket.list_blobs(prefix=prefix, max_results=1))
-            if blobs:
+        for file_path, key in specific_files:
+            blob = _bucket.blob(file_path)
+            if blob.exists():
                 info[key] = True
+        
+        # Check for audio files with various patterns
+        audio_patterns = ['recording', 'audio', 'test_audio']
+        audio_extensions = ['.wav', '.ogg', '.mp3', '.m4a', '.webm']
+        
+        # List all files in the session directory
+        blobs = _bucket.list_blobs(prefix=f"sessions/{session_id}/")
+        for blob in blobs:
+            filename = blob.name.split('/')[-1].lower()
+            
+            # Check if it's an audio file
+            for pattern in audio_patterns:
+                if pattern in filename:
+                    for ext in audio_extensions:
+                        if filename.endswith(ext):
+                            info['Has Audio'] = True
+                            break
+                if info['Has Audio']:
+                    break
+            
+            # Also check for any file with audio extension
+            if not info['Has Audio']:
+                for ext in audio_extensions:
+                    if filename.endswith(ext):
+                        info['Has Audio'] = True
+                        break
+            
+            # Check for transcript files
+            if 'transcript' in filename or filename == 'transcription.json':
+                info['Has Transcript'] = True
+            
+            # Check for analysis files
+            if 'analysis' in filename:
+                info['Has Analysis'] = True
         
         # Try to get additional metadata
         metadata_blob = _bucket.blob(f"sessions/{session_id}/metadata.json")
@@ -177,6 +208,18 @@ def get_session_metadata(_bucket, session_id):
                 info['Needs Review'] = analysis_data.get('requires_review', False)
                 info['Review Priority'] = analysis_data.get('review_priority', None)
                 info['Review Reasons'] = analysis_data.get('review_reasons', [])
+                
+                # Add analysis metrics
+                info['Structure Score'] = analysis_data.get('structure_analysis', {}).get('structure_score', None)
+                info['Pause Compliance'] = analysis_data.get('pause_compliance_score', None)
+                info['Unresolved Issues'] = len(analysis_data.get('unresolved_issues', []))
+                info['Politeness Score'] = analysis_data.get('politeness_score', None)
+                info['Satisfaction'] = analysis_data.get('final_satisfaction', None)
+                
+                # Get emotional tone
+                tone_eval = analysis_data.get('tone_evaluation', {})
+                info['Customer Tone'] = tone_eval.get('customer_tone', None)
+                info['Agent Tone'] = tone_eval.get('agent_tone', None)
             except:
                 pass
         
@@ -188,6 +231,16 @@ def get_session_metadata(_bucket, session_id):
             info['Needs Review'] = analysis.requires_review
             info['Review Priority'] = analysis.review_priority
             info['Review Reasons'] = analysis.review_reasons
+            
+            # Add analysis metrics from session state
+            if hasattr(analysis, 'structure_analysis'):
+                info['Structure Score'] = analysis.structure_analysis.structure_score
+            info['Pause Compliance'] = analysis.pause_compliance_score
+            info['Unresolved Issues'] = len(analysis.unresolved_issues)
+            info['Politeness Score'] = analysis.politeness_score
+            info['Satisfaction'] = analysis.final_satisfaction
+            info['Customer Tone'] = analysis.tone_evaluation.customer_tone
+            info['Agent Tone'] = analysis.tone_evaluation.agent_tone
         
         # Determine status
         if info['Has Audio']:
@@ -338,39 +391,87 @@ def display_session_table(df):
         # Use regular dataframe display
         st.info("👆 Enter a Session ID in the box below to view details")
         
-        # Display compact dataframe with review status
-        display_df = filtered_df[['Session ID', 'Timestamp', 'Has Audio', 'Has Transcript', 'Status', 'Needs Review', 'Review Priority', 'Duration']]
+        # Display compact dataframe with analysis metrics
+        # Select columns to display
+        columns_to_show = ['Session ID', 'Timestamp']
+        
+        # Add analysis columns if they exist
+        if 'Structure Score' in filtered_df.columns:
+            columns_to_show.append('Structure Score')
+        if 'Pause Compliance' in filtered_df.columns:
+            columns_to_show.append('Pause Compliance')
+        if 'Unresolved Issues' in filtered_df.columns:
+            columns_to_show.append('Unresolved Issues')
+        if 'Politeness Score' in filtered_df.columns:
+            columns_to_show.append('Politeness Score')
+        if 'Satisfaction' in filtered_df.columns:
+            columns_to_show.append('Satisfaction')
+        if 'Customer Tone' in filtered_df.columns:
+            columns_to_show.append('Customer Tone')
+        
+        # Always include review status
+        columns_to_show.extend(['Needs Review', 'Review Priority'])
+        
+        # Create display dataframe with available columns
+        available_columns = [col for col in columns_to_show if col in filtered_df.columns]
+        display_df = filtered_df[available_columns].copy()
         
         # Add visual indicator for review priority
         def format_review_priority(row):
-            if row['Needs Review']:
-                priority = row['Review Priority']
+            if 'Needs Review' in row and row['Needs Review']:
+                priority = row.get('Review Priority', '')
                 if priority == 'urgent':
-                    return '🔴 URGENT'
+                    return '🔴 Urgent'
                 elif priority == 'high':
-                    return '🟠 HIGH'
+                    return '🟠 High'
                 elif priority == 'medium':
-                    return '🟡 MEDIUM'
-                else:
-                    return '🟢 LOW'
-            return ''
+                    return '🟡 Medium'
+                elif priority == 'low':
+                    return '🟢 Low'
+            return '🟢 OK'
         
         display_df['Review Status'] = display_df.apply(format_review_priority, axis=1)
-        display_df = display_df[['Session ID', 'Timestamp', 'Has Audio', 'Has Transcript', 'Status', 'Review Status', 'Duration']]
+        
+        # Format satisfaction for better display
+        if 'Satisfaction' in display_df.columns:
+            def format_satisfaction(val):
+                if pd.isna(val):
+                    return '-'
+                elif 'satisfied' in str(val).lower():
+                    if 'very' in str(val).lower() and 'dis' not in str(val).lower():
+                        return '😊 Very Satisfied'
+                    elif 'dis' in str(val).lower():
+                        if 'very' in str(val).lower():
+                            return '😠 Very Dissatisfied'
+                        return '😞 Dissatisfied'
+                    return '😊 Satisfied'
+                elif 'neutral' in str(val).lower():
+                    return '😐 Neutral'
+                return str(val)
+            display_df['Satisfaction'] = display_df['Satisfaction'].apply(format_satisfaction)
+        
+        # Remove the separate Needs Review and Review Priority columns
+        display_columns = [col for col in display_df.columns if col not in ['Needs Review', 'Review Priority']]
+        display_df = display_df[display_columns]
+        
+        # Configure column display
+        column_config = {
+            "Session ID": st.column_config.TextColumn("Session ID", width="medium"),
+            "Timestamp": st.column_config.DatetimeColumn("Date", format="DD/MM HH:mm"),
+            "Structure Score": st.column_config.NumberColumn("Structure", format="%.0f%%"),
+            "Pause Compliance": st.column_config.NumberColumn("Pause Compl.", format="%.0f%%"),
+            "Unresolved Issues": st.column_config.NumberColumn("Unresolved", format="%d"),
+            "Politeness Score": st.column_config.NumberColumn("Politeness", format="%.0f%%"),
+            "Satisfaction": st.column_config.TextColumn("Satisfaction", width="small"),
+            "Customer Tone": st.column_config.TextColumn("Customer Tone", width="small"),
+            "Review Status": st.column_config.TextColumn("Review", width="small"),
+        }
         
         st.dataframe(
             display_df,
             use_container_width=True,
             hide_index=True,
-            column_config={
-                "Session ID": st.column_config.TextColumn("Session ID", width="medium"),
-                "Timestamp": st.column_config.DatetimeColumn("Timestamp", format="DD/MM HH:mm"),
-                "Has Audio": st.column_config.CheckboxColumn("Audio"),
-                "Has Transcript": st.column_config.CheckboxColumn("Transcript"),
-                "Status": st.column_config.TextColumn("Status", width="small"),
-                "Review Status": st.column_config.TextColumn("Review", width="small"),
-                "Duration": st.column_config.NumberColumn("Duration (s)", format="%.1f"),
-            }
+            column_config=column_config
         )
         
         # Session selector
@@ -389,32 +490,30 @@ def display_session_table(df):
         # Interactive button view
         st.info("👆 Click on a session ID to view details")
         
-        # Add column headers
-        col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([3, 2, 1, 1, 1, 1, 1, 1, 2])
+        # Add column headers for analysis metrics
+        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([3, 2, 1, 1, 1, 1, 2, 1])
         with col1:
             st.markdown("**Session ID**")
         with col2:
-            st.markdown("**Timestamp**")
+            st.markdown("**Date**")
         with col3:
-            st.markdown("**Audio**")
+            st.markdown("**Structure**")
         with col4:
-            st.markdown("**Transcript**")
+            st.markdown("**Pause**")
         with col5:
-            st.markdown("**Analysis**")
+            st.markdown("**Unresolved**")
         with col6:
-            st.markdown("**Duration**")
+            st.markdown("**Politeness**")
         with col7:
-            st.markdown("**Status**")
+            st.markdown("**Satisfaction**")
         with col8:
             st.markdown("**Review**")
-        with col9:
-            st.markdown("**Language**")
         
         st.markdown("---")
         
         # Display the dataframe with action buttons
         for idx, row in filtered_df.iterrows():
-            col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([3, 2, 1, 1, 1, 1, 1, 1, 2])
+            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([3, 2, 1, 1, 1, 1, 2, 1])
             
             with col1:
                 if st.button(f"📂 {row['Session ID'][:30]}...", key=f"btn_{idx}", use_container_width=True):
@@ -424,59 +523,97 @@ def display_session_table(df):
             
             with col2:
                 if pd.notna(row['Timestamp']):
-                    st.text(row['Timestamp'].strftime("%Y-%m-%d %H:%M"))
+                    st.text(row['Timestamp'].strftime("%m/%d %H:%M"))
                 else:
                     st.text("—")
             
             with col3:
-                if row['Has Audio']:
-                    st.success("✅")
+                # Structure Score
+                if 'Structure Score' in row and pd.notna(row['Structure Score']):
+                    score = row['Structure Score']
+                    if score >= 80:
+                        st.success(f"{score:.0f}%")
+                    elif score >= 60:
+                        st.warning(f"{score:.0f}%")
+                    else:
+                        st.error(f"{score:.0f}%")
                 else:
-                    st.error("❌")
+                    st.text("—")
             
             with col4:
-                if row['Has Transcript']:
-                    st.success("✅")
+                # Pause Compliance
+                if 'Pause Compliance' in row and pd.notna(row['Pause Compliance']):
+                    score = row['Pause Compliance']
+                    if score >= 90:
+                        st.success(f"{score:.0f}%")
+                    elif score >= 70:
+                        st.warning(f"{score:.0f}%")
+                    else:
+                        st.error(f"{score:.0f}%")
                 else:
-                    st.error("❌")
+                    st.text("—")
             
             with col5:
-                if row['Has Analysis']:
-                    st.success("✅")
+                # Unresolved Issues
+                if 'Unresolved Issues' in row and pd.notna(row['Unresolved Issues']):
+                    count = row['Unresolved Issues']
+                    if count == 0:
+                        st.success("0")
+                    elif count <= 2:
+                        st.warning(str(count))
+                    else:
+                        st.error(str(count))
                 else:
-                    st.error("❌")
+                    st.text("—")
             
             with col6:
-                if pd.notna(row['Duration']):
-                    st.text(f"{row['Duration']:.1f}s")
+                # Politeness Score
+                if 'Politeness Score' in row and pd.notna(row['Politeness Score']):
+                    score = row['Politeness Score']
+                    if score >= 80:
+                        st.success(f"{score:.0f}%")
+                    elif score >= 60:
+                        st.warning(f"{score:.0f}%")
+                    else:
+                        st.error(f"{score:.0f}%")
                 else:
                     st.text("—")
             
             with col7:
-                status_color = {
-                    'Analyzed': '🟢',
-                    'Ready': '🟡',
-                    'Incomplete': '🔴'
-                }.get(row['Status'], '⚪')
-                st.text(f"{status_color} {row['Status']}")
-            
-            with col8:
-                # Show review status with priority
-                if row['Needs Review']:
-                    priority = row['Review Priority']
-                    if priority == 'urgent':
-                        st.error("🔴 URGENT")
-                    elif priority == 'high':
-                        st.warning("🟠 HIGH")
-                    elif priority == 'medium':
-                        st.warning("🟡 MED")
+                # Satisfaction
+                if 'Satisfaction' in row and pd.notna(row['Satisfaction']):
+                    sat = str(row['Satisfaction']).lower()
+                    if 'very_satisfied' in sat or 'satisfied' in sat and 'dis' not in sat:
+                        if 'very' in sat:
+                            st.success("😊 Very Satisfied")
+                        else:
+                            st.success("😊 Satisfied")
+                    elif 'neutral' in sat:
+                        st.warning("😐 Neutral")
+                    elif 'dissatisfied' in sat:
+                        if 'very' in sat:
+                            st.error("😠 Very Dissatisfied")
+                        else:
+                            st.error("😞 Dissatisfied")
                     else:
-                        st.info("🟢 LOW")
+                        st.text(row['Satisfaction'][:15])
                 else:
                     st.text("—")
             
-            with col9:
-                st.text(row.get('Language', '—'))
+            with col8:
+                # Show review status with priority
+                if 'Needs Review' in row and row['Needs Review']:
+                    priority = row.get('Review Priority', 'low')
+                    if priority == 'urgent':
+                        st.error("🔴")
+                    elif priority == 'high':
+                        st.warning("🟠")
+                    elif priority == 'medium':
+                        st.warning("🟡")
+                    else:
+                        st.info("🟢")
+                else:
+                    st.info("🟢")
     
     return filtered_df
 
@@ -553,6 +690,7 @@ def display_session_details(bucket, session_id):
 
 def display_transcription_tab(bucket, session_id):
     """Display transcription with all features from v1"""
+    import json
     from app_utils import transcribe_audio_with_diarization, get_audio_url, create_speaker_timeline_html
     from src.services.transcription_service import TranscriptionService
     from src.models.transcription import TranscriptionResponse
@@ -561,6 +699,16 @@ def display_transcription_tab(bucket, session_id):
     
     # Check if transcription exists
     transcription_key = f"transcription_{session_id}"
+    
+    # Try to load existing transcription from GCS if not in session state
+    if transcription_key not in st.session_state:
+        transcription_blob = bucket.blob(f"sessions/{session_id}/transcription.json")
+        if transcription_blob.exists():
+            try:
+                trans_data = json.loads(transcription_blob.download_as_text())
+                st.session_state[transcription_key] = TranscriptionResponse(**trans_data)
+            except Exception as e:
+                st.warning(f"Could not load existing transcription: {e}")
     
     # Transcription controls
     col1, col2, col3 = st.columns([2, 2, 3])
@@ -916,6 +1064,7 @@ def display_audio_tab(bucket, session_id):
 
 def display_analysis_tab(bucket, session_id):
     """Display AI analysis results"""
+    import json
     from app_utils import analyze_transcription_with_gemini
     from src.models.analysis import ConversationAnalysisResult
     
@@ -925,6 +1074,27 @@ def display_analysis_tab(bucket, session_id):
     # Check if transcription exists
     transcription_key = f"transcription_{session_id}"
     analysis_key = f"conversation_analysis_{session_id}"
+    
+    # Try to load existing analysis from GCS if not in session state
+    if analysis_key not in st.session_state:
+        analysis_blob = bucket.blob(f"sessions/{session_id}/conversation_analysis.json")
+        if analysis_blob.exists():
+            try:
+                analysis_data = json.loads(analysis_blob.download_as_text())
+                st.session_state[analysis_key] = ConversationAnalysisResult(**analysis_data)
+            except Exception as e:
+                st.warning(f"Could not load existing analysis: {e}")
+    
+    # Also try to load transcription if not in session state
+    if transcription_key not in st.session_state:
+        transcription_blob = bucket.blob(f"sessions/{session_id}/transcription.json")
+        if transcription_blob.exists():
+            try:
+                from src.models.transcription import TranscriptionResponse
+                trans_data = json.loads(transcription_blob.download_as_text())
+                st.session_state[transcription_key] = TranscriptionResponse(**trans_data)
+            except Exception as e:
+                pass  # Silent fail, will show warning below
     
     if GEMINI_AVAILABLE:
         if transcription_key not in st.session_state:
@@ -1399,6 +1569,130 @@ def main():
         if not sessions_df.empty:
             # Display session count and check for specific sessions
             st.success(f"✅ Found **{len(sessions_df)}** total sessions")
+            
+            # Bulk operations section
+            st.markdown("### 🛠️ Bulk Operations")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Check for sessions that need transcription
+                sessions_needing_transcription = sessions_df[
+                    (sessions_df['Has Audio'] == True) & 
+                    (sessions_df['Has Transcript'] == False)
+                ]
+                
+                # Bulk transcription section - always show
+                with st.expander(f"🎙️ Bulk Transcription ({len(sessions_needing_transcription)} pending)", expanded=False):
+                    st.markdown("### Generate Transcripts for All Missing Sessions")
+                    st.write(f"This will generate transcripts for {len(sessions_needing_transcription)} sessions:")
+                    
+                    # Show list of sessions to be processed
+                    session_list = sessions_needing_transcription['Session ID'].tolist()
+                    if session_list:
+                        st.write(", ".join(session_list[:10]))
+                        if len(session_list) > 10:
+                            st.write(f"... and {len(session_list) - 10} more")
+                        
+                        if st.button("🚀 Start Bulk Transcription", type="primary"):
+                            from app_utils import transcribe_audio_with_diarization
+                            
+                            # Progress tracking
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            success_count = 0
+                            failed_sessions = []
+                            
+                            for i, session_id in enumerate(session_list):
+                                # Update progress
+                                progress = (i + 1) / len(session_list)
+                                progress_bar.progress(progress)
+                                status_text.text(f"Processing {i+1}/{len(session_list)}: {session_id}")
+                                
+                                try:
+                                    # Generate transcription
+                                    transcription = transcribe_audio_with_diarization(bucket, session_id, force_regenerate=True)
+                                    if transcription:
+                                        success_count += 1
+                                    else:
+                                        failed_sessions.append(session_id)
+                                except Exception as e:
+                                    failed_sessions.append(session_id)
+                                    st.warning(f"Failed to transcribe {session_id}: {str(e)}")
+                            
+                            # Clear progress indicators
+                            progress_bar.empty()
+                            status_text.empty()
+                            
+                            # Show results
+                            if success_count > 0:
+                                st.success(f"✅ Successfully transcribed {success_count} sessions")
+                            if failed_sessions:
+                                st.error(f"❌ Failed to transcribe {len(failed_sessions)} sessions: {', '.join(failed_sessions)}")
+                            
+                            # Clear cache and refresh
+                            st.cache_data.clear()
+                            st.rerun()
+                    else:
+                        st.info("No sessions require transcription. All sessions with audio have been transcribed.")
+            
+            with col2:
+                # Check for sessions that need analysis
+                sessions_needing_analysis = sessions_df[
+                    (sessions_df['Has Transcript'] == True) & 
+                    (sessions_df['Has Analysis'] == False)
+                ]
+                
+                # Bulk analysis section - always show
+                with st.expander(f"🔍 Bulk Analysis ({len(sessions_needing_analysis)} pending)", expanded=False):
+                    st.markdown("### Analyze All Sessions with Transcripts")
+                    st.write(f"This will analyze {len(sessions_needing_analysis)} sessions that have transcripts but no analysis:")
+                    
+                    # Show list of sessions to be processed
+                    analysis_list = sessions_needing_analysis['Session ID'].tolist()
+                    st.write(", ".join(analysis_list[:10]))
+                    if len(analysis_list) > 10:
+                        st.write(f"... and {len(analysis_list) - 10} more")
+                    
+                    if st.button("🚀 Start Bulk Analysis", type="primary", key="bulk_analysis_btn"):
+                        from app_utils import analyze_transcription_with_gemini
+                        
+                        # Progress tracking
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        success_count = 0
+                        failed_sessions = []
+                        
+                        for i, session_id in enumerate(analysis_list):
+                            # Update progress
+                            progress = (i + 1) / len(analysis_list)
+                            progress_bar.progress(progress)
+                            status_text.text(f"Analyzing {i+1}/{len(analysis_list)}: {session_id}")
+                            
+                            try:
+                                # Generate analysis
+                                analysis = analyze_transcription_with_gemini(session_id, force_regenerate=True)
+                                if analysis:
+                                    success_count += 1
+                                else:
+                                    failed_sessions.append(session_id)
+                            except Exception as e:
+                                failed_sessions.append(session_id)
+                                st.warning(f"Failed to analyze {session_id}: {str(e)}")
+                        
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        # Show results
+                        if success_count > 0:
+                            st.success(f"✅ Successfully analyzed {success_count} sessions")
+                        if failed_sessions:
+                            st.error(f"❌ Failed to analyze {len(failed_sessions)} sessions: {', '.join(failed_sessions)}")
+                        
+                        # Clear cache and refresh
+                        st.cache_data.clear()
+                        st.rerun()
             
             # Debug: Check if test_transcription_001 is in the list
             session_ids = sessions_df['Session ID'].tolist()

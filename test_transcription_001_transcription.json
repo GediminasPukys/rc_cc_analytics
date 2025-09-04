@@ -1,0 +1,49 @@
+{
+  "session_id": "test_transcription_001",
+  "total_duration": 9.436,
+  "num_speakers": 2,
+  "transcription": [
+    {
+      "timestamp_start": 0.0,
+      "timestamp_end": 1.016,
+      "speaker_label": "speaker1",
+      "text": "Hello, this is a test customer service call.",
+      "interval_id": 1
+    },
+    {
+      "timestamp_start": 1.016,
+      "timestamp_end": 4.766,
+      "speaker_label": "speaker1",
+      "text": "I am calling about my account. Can you help me with my billing question?",
+      "interval_id": 2
+    },
+    {
+      "timestamp_start": 4.766,
+      "timestamp_end": 5.556,
+      "speaker_label": "speaker2",
+      "text": "Yes, I can help you with that.",
+      "interval_id": 3
+    },
+    {
+      "timestamp_start": 5.556,
+      "timestamp_end": 7.246,
+      "speaker_label": "speaker1",
+      "text": "Thank you very much.",
+      "interval_id": 4
+    },
+    {
+      "timestamp_start": 7.246,
+      "timestamp_end": 8.146,
+      "speaker_label": "speaker2",
+      "text": "Your welcome.",
+      "interval_id": 5
+    },
+    {
+      "timestamp_start": 8.146,
+      "timestamp_end": 9.436,
+      "speaker_label": "speaker2",
+      "text": "Have a great day.",
+      "interval_id": 6
+    }
+  ]
+}
