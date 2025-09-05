@@ -126,7 +126,15 @@ class ConversationAnalysisService:
           * Abrupt ending without closure
           * Stages out of order
         
-        7. REVIEW REQUIREMENTS:
+        7. CONVERSATION CATEGORY:
+        - Determine the primary category of this conversation:
+          * MIGRATION_DEPARTMENT: Conversations about department transfers, service migrations, or moving services between departments
+          * APPLICATION_STATUS: Checking status of applications, documents, or requests that were submitted
+          * GENERAL_INFORMATION: General inquiries about services, procedures, or information
+          * OTHER: Any conversation that doesn't fit the above categories
+        - Choose the most appropriate single category based on the main topic discussed
+        
+        8. REVIEW REQUIREMENTS:
         - Mark for review if:
           * Customer explicitly states problem unresolved
           * Multiple long pauses without announcement

@@ -224,6 +224,9 @@ def get_session_metadata(_bucket, session_id):
                 info['Politeness Score'] = analysis_data.get('politeness_score', None)
                 info['Satisfaction'] = analysis_data.get('final_satisfaction', None)
                 
+                # Get conversation category
+                info['Category'] = analysis_data.get('conversation_category', None)
+                
                 # Get emotional tone
                 tone_eval = analysis_data.get('tone_evaluation', {})
                 info['Customer Tone'] = tone_eval.get('customer_tone', None)
@@ -247,6 +250,11 @@ def get_session_metadata(_bucket, session_id):
             info['Unresolved Issues'] = len(analysis.unresolved_issues)
             info['Politeness Score'] = analysis.politeness_score
             info['Satisfaction'] = analysis.final_satisfaction
+            
+            # Get conversation category
+            if hasattr(analysis, 'conversation_category'):
+                info['Category'] = analysis.conversation_category
+            
             info['Customer Tone'] = analysis.tone_evaluation.customer_tone
             info['Agent Tone'] = analysis.tone_evaluation.agent_tone
         
@@ -416,6 +424,8 @@ def display_session_table(df):
             columns_to_show.append('Satisfaction')
         if 'Customer Tone' in filtered_df.columns:
             columns_to_show.append('Customer Tone')
+        if 'Category' in filtered_df.columns:
+            columns_to_show.append('Category')
         
         # Always include review status
         columns_to_show.extend(['Needs Review', 'Review Priority'])
@@ -463,6 +473,23 @@ def display_session_table(df):
                 return str(val)
             display_df['Satisfaction'] = display_df['Satisfaction'].apply(format_satisfaction)
         
+        # Format category for better display
+        if 'Category' in display_df.columns:
+            def format_category(val):
+                if pd.isna(val):
+                    return '-'
+                cat = str(val).lower()
+                if 'migration' in cat:
+                    return '🔄 Migration'
+                elif 'application' in cat:
+                    return '📋 Application'
+                elif 'general' in cat:
+                    return 'ℹ️ General'
+                elif val and val != 'None':
+                    return 'Other'
+                return '-'
+            display_df['Category'] = display_df['Category'].apply(format_category)
+        
         # Remove the separate Needs Review and Review Priority columns
         display_columns = [col for col in display_df.columns if col not in ['Needs Review', 'Review Priority']]
         display_df = display_df[display_columns]
@@ -477,6 +504,7 @@ def display_session_table(df):
             "Politeness Score": st.column_config.NumberColumn("Politeness", format="%.0f%%"),
             "Satisfaction": st.column_config.TextColumn("Satisfaction", width="small"),
             "Customer Tone": st.column_config.TextColumn("Customer Tone", width="small"),
+            "Category": st.column_config.TextColumn("Category", width="small"),
             "Review Status": st.column_config.TextColumn("Review", width="small"),
         }
         
@@ -504,7 +532,7 @@ def display_session_table(df):
         st.info("👆 Click on a session ID to view details")
         
         # Add column headers for analysis metrics
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([3, 2, 1, 1, 1, 1, 2, 1])
+        col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([2.5, 1.5, 1, 1, 1, 1, 1.5, 1.5, 1])
         with col1:
             st.markdown("**Session ID**")
         with col2:
@@ -520,13 +548,15 @@ def display_session_table(df):
         with col7:
             st.markdown("**Satisfaction**")
         with col8:
+            st.markdown("**Category**")
+        with col9:
             st.markdown("**Review**")
         
         st.markdown("---")
         
         # Display the dataframe with action buttons
         for idx, row in filtered_df.iterrows():
-            col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([3, 2, 1, 1, 1, 1, 2, 1])
+            col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([2.5, 1.5, 1, 1, 1, 1, 1.5, 1.5, 1])
             
             with col1:
                 if st.button(f"📂 {row['Session ID'][:30]}...", key=f"btn_{idx}", use_container_width=True):
@@ -614,6 +644,21 @@ def display_session_table(df):
                     st.text("—")
             
             with col8:
+                # Category
+                if 'Category' in row and pd.notna(row['Category']):
+                    cat = str(row['Category']).lower()
+                    if 'migration' in cat:
+                        st.info("🔄 Migration")
+                    elif 'application' in cat:
+                        st.info("📋 Application")
+                    elif 'general' in cat:
+                        st.info("ℹ️ General")
+                    else:
+                        st.text("Other")
+                else:
+                    st.text("—")
+            
+            with col9:
                 # Show review status with priority
                 if 'Needs Review' in row and row['Needs Review']:
                     priority = row.get('Review Priority', 'low')
@@ -1145,7 +1190,7 @@ def display_analysis_tab(bucket, session_id):
                 st.success("✅ No immediate review required")
             
             # Key Metrics
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
                 st.metric("Resolution Status", analysis.resolution_status.replace("_", " ").title())
             with col2:
@@ -1154,10 +1199,24 @@ def display_analysis_tab(bucket, session_id):
                 st.metric("Long Pauses", len(analysis.long_pauses))
             with col4:
                 st.metric("Unresolved Issues", len(analysis.unresolved_issues))
+            with col5:
+                # Display conversation category
+                if hasattr(analysis, 'conversation_category'):
+                    cat = analysis.conversation_category.lower() if analysis.conversation_category else "other"
+                    cat_display = {
+                        'migration_department': '🔄 Migration',
+                        'application_status': '📋 Application',
+                        'general_information': 'ℹ️ General',
+                        'other': '📁 Other'
+                    }.get(cat, '📁 Other')
+                    st.metric("Category", cat_display)
+                else:
+                    st.metric("Category", "—")
             
             # Detailed Analysis Tabs
             tabs = st.tabs([
                 "📋 Summary", 
+                "🏷️ Category",
                 "🔄 Conversation Structure",
                 "⏸️ Pause Analysis", 
                 "❌ Unresolved Issues", 
@@ -1176,7 +1235,53 @@ def display_analysis_tab(bucket, session_id):
                     for finding in analysis.key_findings:
                         st.write(f"• {finding}")
             
-            with tabs[1]:  # Conversation Structure
+            with tabs[1]:  # Category
+                st.markdown("#### Conversation Category")
+                
+                if hasattr(analysis, 'conversation_category'):
+                    category = analysis.conversation_category
+                    
+                    # Display the main category
+                    category_info = {
+                        'migration_department': {
+                            'icon': '🔄',
+                            'title': 'Migration/Department Transfer',
+                            'description': 'This conversation involves department transfers, service migrations, or moving services between departments.',
+                            'keywords': ['migration', 'transfer', 'department', 'move', 'switch']
+                        },
+                        'application_status': {
+                            'icon': '📋',
+                            'title': 'Application Status Check',
+                            'description': 'Customer is checking the status of submitted applications, documents, or requests.',
+                            'keywords': ['application', 'status', 'submitted', 'documents', 'request', 'pending']
+                        },
+                        'general_information': {
+                            'icon': 'ℹ️',
+                            'title': 'General Information',
+                            'description': 'General inquiries about services, procedures, or seeking information.',
+                            'keywords': ['information', 'inquiry', 'how to', 'what is', 'procedure', 'service']
+                        },
+                        'other': {
+                            'icon': '📁',
+                            'title': 'Other',
+                            'description': 'Conversation does not fit into the standard categories.',
+                            'keywords': []
+                        }
+                    }
+                    
+                    cat_info = category_info.get(category.lower() if category else 'other', category_info['other'])
+                    
+                    # Display category with icon
+                    st.info(f"{cat_info['icon']} **{cat_info['title']}**")
+                    st.write(cat_info['description'])
+                    
+                    if cat_info['keywords']:
+                        st.markdown("**Common keywords for this category:**")
+                        st.write(", ".join(f"`{kw}`" for kw in cat_info['keywords']))
+                else:
+                    st.info("Category information not available. Re-analyze to include category detection.")
+            
+            with tabs[2]:  # Conversation Structure
                 st.markdown("#### Conversation Structure Analysis")
                 
                 if hasattr(analysis, 'structure_analysis'):
@@ -1225,7 +1330,7 @@ def display_analysis_tab(bucket, session_id):
                 else:
                     st.info("Conversation structure analysis not available in this report. Re-analyze to include this feature.")
             
-            with tabs[2]:  # Pause Analysis
+            with tabs[3]:  # Pause Analysis
                 st.markdown("#### Pause Compliance Analysis")
                 
                 if analysis.long_pauses:
@@ -1262,7 +1367,7 @@ def display_analysis_tab(bucket, session_id):
                 if analysis.compliance_violations > 0:
                     st.error(f"⚠️ {analysis.compliance_violations} compliance violation(s) detected")
             
-            with tabs[3]:  # Unresolved Issues
+            with tabs[4]:  # Unresolved Issues
                 st.markdown("#### Unresolved Issues Detection")
                 
                 if analysis.unresolved_issues:
@@ -1305,7 +1410,7 @@ def display_analysis_tab(bucket, session_id):
                         else:
                             st.warning(f"😔 {indicator}")
             
-            with tabs[4]:  # Politeness Analysis
+            with tabs[5]:  # Politeness Analysis
                 st.markdown("#### Politeness Elements Analysis")
                 
                 # Key metrics
@@ -1346,7 +1451,7 @@ def display_analysis_tab(bucket, session_id):
                 else:
                     st.info("No specific politeness elements detected")
             
-            with tabs[5]:  # Satisfaction Analysis
+            with tabs[6]:  # Satisfaction Analysis
                 st.markdown("#### Customer Satisfaction Analysis")
                 
                 # Final satisfaction
@@ -1385,7 +1490,7 @@ def display_analysis_tab(bucket, session_id):
                 else:
                     st.info("No specific satisfaction signals detected")
             
-            with tabs[6]:  # Emotional Tone Evaluation
+            with tabs[7]:  # Emotional Tone Evaluation
                 st.markdown("#### Emotional Tone Evaluation")
                 
                 if analysis.tone_evaluation:
@@ -1433,7 +1538,7 @@ def display_analysis_tab(bucket, session_id):
                     else:
                         st.success("✅ No significant tone mismatches detected")
             
-            with tabs[7]:  # Full Report
+            with tabs[8]:  # Full Report
                 st.markdown("#### Complete Analysis Report")
                 
                 # Export button

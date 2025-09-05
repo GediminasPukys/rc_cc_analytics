@@ -21,6 +21,13 @@ class ResolutionStatus(str, Enum):
     PARTIAL = "partial"
 
 
+class ConversationCategory(str, Enum):
+    MIGRATION_DEPARTMENT = "migration_department"
+    APPLICATION_STATUS = "application_status"
+    GENERAL_INFORMATION = "general_information"
+    OTHER = "other"
+
+
 class ConversationPause(BaseModel):
     """Represents a pause in the conversation"""
     timestamp_start: float = Field(description="Start time of the pause in seconds")
@@ -264,6 +271,11 @@ class ConversationAnalysisResult(BaseModel):
     # Conversation Structure Analysis
     structure_analysis: ConversationStructureAnalysis = Field(
         description="Analysis of conversation structure and flow"
+    )
+    
+    # Conversation Category
+    conversation_category: str = Field(
+        description="Category of the conversation: migration_department, application_status, general_information, or other"
     )
     
     # Summary
