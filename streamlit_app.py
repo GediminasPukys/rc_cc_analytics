@@ -46,19 +46,19 @@ if 'view_mode' not in st.session_state:
 def init_gcs_client():
     """Initialize GCS client with credentials from Streamlit secrets"""
     try:
-        # Check if GCP service account credentials are in secrets
-        if "gcp_service_account" in st.secrets:
-            # Create credentials from service account info in secrets
-            credentials = service_account.Credentials.from_service_account_info(
-                st.secrets["gcp_service_account"]
-            )
-            client = storage.Client(
-                credentials=credentials,
-                project=GOOGLE_CLOUD_PROJECT
-            )
-        else:
-            # Try default credentials
-            client = storage.Client(project=GOOGLE_CLOUD_PROJECT)
+        # Always use service account credentials from secrets
+        if "gcp_service_account" not in st.secrets:
+            st.error("❌ GCP service account credentials not found in secrets. Please configure them in .streamlit/secrets.toml")
+            return None, None
+        
+        # Create credentials from service account info in secrets
+        credentials = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"]
+        )
+        client = storage.Client(
+            credentials=credentials,
+            project=GOOGLE_CLOUD_PROJECT
+        )
         
         bucket = client.bucket(BUCKET_NAME)
         return client, bucket

@@ -201,7 +201,21 @@ def analyze_transcription_with_gemini(session_id, force_regenerate=False):
                 try:
                     import json
                     from google.cloud import storage
-                    client = storage.Client()
+                    from google.oauth2 import service_account
+                    
+                    # Create credentials from service account info in secrets
+                    if "gcp_service_account" in st.secrets:
+                        credentials = service_account.Credentials.from_service_account_info(
+                            st.secrets["gcp_service_account"]
+                        )
+                        client = storage.Client(
+                            credentials=credentials,
+                            project=st.secrets.get("gcs", {}).get("GOOGLE_CLOUD_PROJECT", "voting-2024")
+                        )
+                    else:
+                        # Fallback - try without explicit credentials (won't work on Streamlit Cloud)
+                        client = storage.Client()
+                    
                     bucket = client.bucket(st.secrets.get("gcs", {}).get("GCS_BUCKET_NAME", "livekit-logs-rc"))
                     blob = bucket.blob(f"sessions/{session_id}/conversation_analysis.json")
                     analysis_json = json.dumps(analysis.model_dump(), indent=2, default=str)
