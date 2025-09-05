@@ -63,10 +63,10 @@ def transcribe_audio_with_diarization(_bucket, session_id, force_regenerate=Fals
         force_regenerate: If True, regenerate even if cached transcription exists
     """
     
-    GEMINI_AVAILABLE = os.getenv("GEMINI_API_KEY") is not None or os.getenv("GOOGLE_API_KEY") is not None
+    GEMINI_AVAILABLE = st.secrets.get("gcs", {}).get("GEMINI_API_KEY") is not None
     
     if not GEMINI_AVAILABLE:
-        st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY or GOOGLE_API_KEY to .env file")
+        st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY to .streamlit/secrets.toml")
         return
     
     # Check if transcription already exists in session state (unless forced to regenerate)
@@ -159,10 +159,10 @@ def analyze_transcription_with_gemini(session_id, force_regenerate=False):
     from src.services.analysis_service import ConversationAnalysisService
     from src.models.analysis import ConversationAnalysisResult
     
-    GEMINI_AVAILABLE = os.getenv("GEMINI_API_KEY") is not None or os.getenv("GOOGLE_API_KEY") is not None
+    GEMINI_AVAILABLE = st.secrets.get("gcs", {}).get("GEMINI_API_KEY") is not None
     
     if not GEMINI_AVAILABLE:
-        st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY or GOOGLE_API_KEY to .env file")
+        st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY to .streamlit/secrets.toml")
         return None
     
     # Check if transcription exists
@@ -202,7 +202,7 @@ def analyze_transcription_with_gemini(session_id, force_regenerate=False):
                     import json
                     from google.cloud import storage
                     client = storage.Client()
-                    bucket = client.bucket(os.getenv("GCS_BUCKET_NAME", "livekit-logs-rc"))
+                    bucket = client.bucket(st.secrets.get("gcs", {}).get("GCS_BUCKET_NAME", "livekit-logs-rc"))
                     blob = bucket.blob(f"sessions/{session_id}/conversation_analysis.json")
                     analysis_json = json.dumps(analysis.model_dump(), indent=2, default=str)
                     blob.upload_from_string(analysis_json, content_type='application/json')

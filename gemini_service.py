@@ -9,8 +9,8 @@ import json
 from typing import Optional
 from datetime import datetime
 import google.generativeai as genai
-from dotenv import load_dotenv
 from pydantic import ValidationError
+import streamlit as st
 
 from json_parser import parse_gemini_response
 from models import (
@@ -34,7 +34,6 @@ from models import (
     ConversationCategorization
 )
 
-load_dotenv()
 
 
 class GeminiCallAnalyzer:
@@ -44,10 +43,16 @@ class GeminiCallAnalyzer:
     """
     
     def __init__(self, api_key: Optional[str] = None):
-        """Initialize Gemini client with API key"""
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        """Initialize Gemini client with API key from Streamlit secrets"""
+        # Try to get API key from Streamlit secrets first, then fall back to parameter
+        try:
+            self.api_key = api_key or st.secrets.get("gcs", {}).get("GEMINI_API_KEY")
+        except:
+            # If st.secrets not available (e.g., when running outside Streamlit)
+            self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY is required. Please add it to your .env file or provide it as an argument.")
+            raise ValueError("GEMINI_API_KEY is required. Please add it to .streamlit/secrets.toml or provide it as an argument.")
         
         genai.configure(api_key=self.api_key)
         

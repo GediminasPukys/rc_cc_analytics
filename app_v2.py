@@ -13,10 +13,6 @@ from google.cloud import storage
 from google.oauth2 import service_account
 import base64
 from io import BytesIO
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Import services
 try:
@@ -24,7 +20,7 @@ try:
     from models import ComprehensiveCallAnalysis
     from src.services.transcription_service import TranscriptionService
     from src.models.transcription import TranscriptionResponse
-    GEMINI_AVAILABLE = os.getenv("GEMINI_API_KEY") is not None or os.getenv("GOOGLE_API_KEY") is not None
+    GEMINI_AVAILABLE = st.secrets.get("gcs", {}).get("GEMINI_API_KEY") is not None
 except Exception as e:
     GEMINI_AVAILABLE = False
     print(f"Gemini service not available: {e}")
@@ -36,9 +32,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# GCS Configuration
-BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "livekit-logs-rc")
-CREDENTIALS_PATH = os.getenv("GCP_CREDENTIALS_PATH")
+# GCS Configuration from Streamlit secrets
+BUCKET_NAME = st.secrets.get("gcs", {}).get("GCS_BUCKET_NAME", "livekit-logs-rc")
+GOOGLE_CLOUD_PROJECT = st.secrets.get("gcs", {}).get("GOOGLE_CLOUD_PROJECT", "voting-2024")
 
 # Initialize session state
 if 'selected_session' not in st.session_state:
@@ -48,13 +44,21 @@ if 'view_mode' not in st.session_state:
 
 @st.cache_resource
 def init_gcs_client():
-    """Initialize GCS client with credentials"""
+    """Initialize GCS client with credentials from Streamlit secrets"""
     try:
-        if CREDENTIALS_PATH and os.path.exists(CREDENTIALS_PATH):
-            credentials = service_account.Credentials.from_service_account_file(CREDENTIALS_PATH)
-            client = storage.Client(credentials=credentials)
+        # Check if GCP service account credentials are in secrets
+        if "gcp_service_account" in st.secrets:
+            # Create credentials from service account info in secrets
+            credentials = service_account.Credentials.from_service_account_info(
+                st.secrets["gcp_service_account"]
+            )
+            client = storage.Client(
+                credentials=credentials,
+                project=GOOGLE_CLOUD_PROJECT
+            )
         else:
-            client = storage.Client()
+            # Try default credentials
+            client = storage.Client(project=GOOGLE_CLOUD_PROJECT)
         
         bucket = client.bucket(BUCKET_NAME)
         return client, bucket
@@ -208,6 +212,10 @@ def get_session_metadata(_bucket, session_id):
                 info['Needs Review'] = analysis_data.get('requires_review', False)
                 info['Review Priority'] = analysis_data.get('review_priority', None)
                 info['Review Reasons'] = analysis_data.get('review_reasons', [])
+                
+                # Debug logging for specific session
+                if session_id == "20250904_180344_custom_empathy":
+                    print(f"DEBUG: Loading {session_id} from GCS - Review Priority: {info['Review Priority']}")
                 
                 # Add analysis metrics
                 info['Structure Score'] = analysis_data.get('structure_analysis', {}).get('structure_score', None)
@@ -418,17 +426,22 @@ def display_session_table(df):
         
         # Add visual indicator for review priority
         def format_review_priority(row):
-            if 'Needs Review' in row and row['Needs Review']:
-                priority = row.get('Review Priority', '')
-                if priority == 'urgent':
-                    return '🔴 Urgent'
-                elif priority == 'high':
-                    return '🟠 High'
-                elif priority == 'medium':
-                    return '🟡 Medium'
-                elif priority == 'low':
-                    return '🟢 Low'
-            return '🟢 OK'
+            raw_priority = row.get('Review Priority', 'none')
+            needs_review = row.get('Needs Review', False)
+            
+            if needs_review:
+                if raw_priority == 'urgent':
+                    return f'🔴 Urgent [{raw_priority}]'
+                elif raw_priority == 'high':
+                    return f'🟠 High [{raw_priority}]'
+                elif raw_priority == 'medium':
+                    return f'🟡 Medium [{raw_priority}]'
+                elif raw_priority == 'low':
+                    return f'🟢 Low [{raw_priority}]'
+                else:
+                    # Show raw value if not matching expected values
+                    return f'❓ Unknown [{raw_priority}]'
+            return f'🟢 OK [none]'
         
         display_df['Review Status'] = display_df.apply(format_review_priority, axis=1)
         

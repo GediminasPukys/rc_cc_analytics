@@ -7,11 +7,7 @@ import streamlit as st
 import os
 import tempfile
 from datetime import datetime
-from dotenv import load_dotenv
 from src.services.tts_service import TextToSpeechService
-
-# Load environment variables
-load_dotenv()
 
 # Page config
 st.set_page_config(
@@ -30,9 +26,9 @@ def main():
     st.title("🎙️ Text-to-Speech Generator")
     st.markdown("Generate natural-sounding speech from text using Google Gemini TTS")
     
-    # Check API key
-    if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
-        st.error("❌ Gemini API key not configured. Please set GEMINI_API_KEY or GOOGLE_API_KEY in your .env file")
+    # Check API key from Streamlit secrets
+    if not st.secrets.get("gcs", {}).get("GEMINI_API_KEY"):
+        st.error("❌ Gemini API key not configured. Please set GEMINI_API_KEY in .streamlit/secrets.toml")
         return
     
     # Sample texts
