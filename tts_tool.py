@@ -27,7 +27,7 @@ def main():
     st.markdown("Generate natural-sounding speech from text using Google Gemini TTS")
     
     # Check API key from Streamlit secrets
-    if not st.secrets.get("gcs", {}).get("GEMINI_API_KEY"):
+    if "gcs" not in st.secrets or "GEMINI_API_KEY" not in st.secrets["gcs"]:
         st.error("❌ Gemini API key not configured. Please set GEMINI_API_KEY in .streamlit/secrets.toml")
         return
     

@@ -63,7 +63,7 @@ def transcribe_audio_with_diarization(_bucket, session_id, force_regenerate=Fals
         force_regenerate: If True, regenerate even if cached transcription exists
     """
     
-    GEMINI_AVAILABLE = st.secrets.get("gcs", {}).get("GEMINI_API_KEY") is not None
+    GEMINI_AVAILABLE = "GEMINI_API_KEY" in st.secrets["gcs"] if "gcs" in st.secrets else False
     
     if not GEMINI_AVAILABLE:
         st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY to .streamlit/secrets.toml")
@@ -159,7 +159,7 @@ def analyze_transcription_with_gemini(session_id, force_regenerate=False):
     from src.services.analysis_service import ConversationAnalysisService
     from src.models.analysis import ConversationAnalysisResult
     
-    GEMINI_AVAILABLE = st.secrets.get("gcs", {}).get("GEMINI_API_KEY") is not None
+    GEMINI_AVAILABLE = "GEMINI_API_KEY" in st.secrets["gcs"] if "gcs" in st.secrets else False
     
     if not GEMINI_AVAILABLE:
         st.error("❌ Gemini API key not configured. Add GEMINI_API_KEY to .streamlit/secrets.toml")
@@ -210,13 +210,13 @@ def analyze_transcription_with_gemini(session_id, force_regenerate=False):
                         )
                         client = storage.Client(
                             credentials=credentials,
-                            project=st.secrets.get("gcs", {}).get("GOOGLE_CLOUD_PROJECT", "voting-2024")
+                            project=st.secrets["gcs"]["GOOGLE_CLOUD_PROJECT"] if "gcs" in st.secrets else "voting-2024"
                         )
                     else:
                         # Fallback - try without explicit credentials (won't work on Streamlit Cloud)
                         client = storage.Client()
                     
-                    bucket = client.bucket(st.secrets.get("gcs", {}).get("GCS_BUCKET_NAME", "livekit-logs-rc"))
+                    bucket = client.bucket(st.secrets["gcs"]["GCS_BUCKET_NAME"] if "gcs" in st.secrets else "livekit-logs-rc")
                     blob = bucket.blob(f"sessions/{session_id}/conversation_analysis.json")
                     analysis_json = json.dumps(analysis.model_dump(), indent=2, default=str)
                     blob.upload_from_string(analysis_json, content_type='application/json')

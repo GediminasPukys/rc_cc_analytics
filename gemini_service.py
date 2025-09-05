@@ -46,7 +46,12 @@ class GeminiCallAnalyzer:
         """Initialize Gemini client with API key from Streamlit secrets"""
         # Try to get API key from Streamlit secrets first, then fall back to parameter
         try:
-            self.api_key = api_key or st.secrets.get("gcs", {}).get("GEMINI_API_KEY")
+            if api_key:
+                self.api_key = api_key
+            elif "gcs" in st.secrets and "GEMINI_API_KEY" in st.secrets["gcs"]:
+                self.api_key = st.secrets["gcs"]["GEMINI_API_KEY"]
+            else:
+                self.api_key = None
         except:
             # If st.secrets not available (e.g., when running outside Streamlit)
             self.api_key = api_key or os.getenv("GEMINI_API_KEY")

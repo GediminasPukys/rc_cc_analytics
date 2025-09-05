@@ -12,6 +12,12 @@ from typing import Optional, Tuple
 from google import genai
 from google.genai import types
 
+try:
+    import streamlit as st
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
+
 
 class TextToSpeechService:
     """Service for generating audio from text using Gemini TTS"""
@@ -27,9 +33,15 @@ class TextToSpeechService:
     
     def __init__(self):
         """Initialize the TTS service"""
-        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        # Get API key from Streamlit secrets or environment
+        if HAS_STREAMLIT and "gcs" in st.secrets and "GEMINI_API_KEY" in st.secrets["gcs"]:
+            self.api_key = st.secrets["gcs"]["GEMINI_API_KEY"]
+        else:
+            # Fallback to environment variables
+            self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY must be set in environment variables")
+            raise ValueError("GEMINI_API_KEY not found in Streamlit secrets or environment variables")
         
         self.client = genai.Client(api_key=self.api_key)
         self.model = "gemini-2.5-pro-preview-tts"

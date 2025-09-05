@@ -20,7 +20,7 @@ try:
     from models import ComprehensiveCallAnalysis
     from src.services.transcription_service import TranscriptionService
     from src.models.transcription import TranscriptionResponse
-    GEMINI_AVAILABLE = st.secrets.get("gcs", {}).get("GEMINI_API_KEY") is not None
+    GEMINI_AVAILABLE = "GEMINI_API_KEY" in st.secrets["gcs"] if "gcs" in st.secrets else False
 except Exception as e:
     GEMINI_AVAILABLE = False
     print(f"Gemini service not available: {e}")
@@ -33,8 +33,8 @@ st.set_page_config(
 )
 
 # GCS Configuration from Streamlit secrets
-BUCKET_NAME = st.secrets.get("gcs", {}).get("GCS_BUCKET_NAME", "livekit-logs-rc")
-GOOGLE_CLOUD_PROJECT = st.secrets.get("gcs", {}).get("GOOGLE_CLOUD_PROJECT", "voting-2024")
+BUCKET_NAME = st.secrets["gcs"]["GCS_BUCKET_NAME"] if "gcs" in st.secrets else "livekit-logs-rc"
+GOOGLE_CLOUD_PROJECT = st.secrets["gcs"]["GOOGLE_CLOUD_PROJECT"] if "gcs" in st.secrets else "voting-2024"
 
 # Initialize session state
 if 'selected_session' not in st.session_state:

@@ -8,13 +8,18 @@ import json
 import logging
 from typing import Optional
 from pathlib import Path
-from dotenv import load_dotenv
 import google.genai as genai
 from google.cloud import storage
+from google.oauth2 import service_account
 
 from src.models.transcription import TranscriptionResponse, TranscriptionSegment
 
-load_dotenv()
+try:
+    import streamlit as st
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -23,16 +28,31 @@ class TranscriptionService:
     
     def __init__(self):
         """Initialize transcription service"""
-        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY not found in environment")
+        # Get API key from Streamlit secrets or environment
+        if HAS_STREAMLIT and "gcs" in st.secrets and "GEMINI_API_KEY" in st.secrets["gcs"]:
+            self.api_key = st.secrets["gcs"]["GEMINI_API_KEY"]
+            self.bucket_name = st.secrets["gcs"]["GCS_BUCKET_NAME"] if "GCS_BUCKET_NAME" in st.secrets["gcs"] else "livekit-logs-rc"
+            # Initialize GCS client with credentials from secrets
+            if "gcp_service_account" in st.secrets:
+                credentials = service_account.Credentials.from_service_account_info(
+                    st.secrets["gcp_service_account"]
+                )
+                self.gcs_client = storage.Client(
+                    credentials=credentials,
+                    project=st.secrets["gcs"]["GOOGLE_CLOUD_PROJECT"] if "GOOGLE_CLOUD_PROJECT" in st.secrets["gcs"] else "voting-2024"
+                )
+            else:
+                self.gcs_client = storage.Client()
+        else:
+            # Fallback to environment variables
+            self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            if not self.api_key:
+                raise ValueError("GEMINI_API_KEY not found in Streamlit secrets or environment")
+            self.bucket_name = os.getenv("GCS_BUCKET_NAME", "livekit-logs-rc")
+            self.gcs_client = storage.Client()
         
         # Initialize Gemini client
         self.client = genai.Client(api_key=self.api_key)
-        
-        # Initialize GCS client
-        self.gcs_client = storage.Client()
-        self.bucket_name = os.getenv("GCS_BUCKET_NAME", "livekit-logs-rc")
     
     def get_transcription_path(self, session_id: str) -> str:
         """Get GCS path for transcription file"""
